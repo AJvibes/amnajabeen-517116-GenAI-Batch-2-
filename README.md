@@ -176,16 +176,14 @@ The AI has full context of your argument and scores. It will concede valid point
 - A modern browser (Chrome, Firefox, Edge, Safari)
 
 ### Running the App
-
 ```bash
-# No installation needed. Just open the file:
-open index.html
+1. Download `index.html` from this repository
+2. Double-click the file — it will open directly in your browser
+3. No server, no installation, no setup required
 
-# Or serve locally if you prefer:
-python -m http.server 8000
-# Then visit http://localhost:8000/index.html
+**Alternative (if double-click doesn't work):**
+- Right-click `index.html` → Open with → Choose your browser (Chrome/Firefox/Edge)
 ```
-
 1. On first launch, enter your Groq API key when prompted
 2. The key is saved to `sessionStorage` — it clears automatically when you close the tab
 3. To change your key, click **Change API Key** in the top-right
