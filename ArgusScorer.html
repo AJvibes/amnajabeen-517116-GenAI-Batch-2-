@@ -1,0 +1,990 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ArgusScorer — Argument Quality Scorer</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,700;1,400&family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'IBM Plex Sans',sans-serif;background:hsl(60 14% 95%);color:hsl(0 0% 4%);min-height:100vh}
+.serif{font-family:'Cormorant Garamond',serif}
+.mono{font-family:'IBM Plex Mono',monospace}
+@keyframes snap-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.snap-in{animation:snap-in 0.18s ease-out both}
+@keyframes spin{to{transform:rotate(360deg)}}
+.spin{animation:spin 1s linear infinite;display:inline-block}
+textarea{resize:vertical}
+button:disabled{opacity:0.4;cursor:not-allowed}
+
+/* scrollbars */
+.history-scroll::-webkit-scrollbar{width:8px}
+.history-scroll::-webkit-scrollbar-track{background:transparent}
+.history-scroll::-webkit-scrollbar-thumb{background:black;border:2px solid white}
+.chat-scroll{overflow-y:auto;max-height:380px;scroll-behavior:smooth}
+.chat-scroll::-webkit-scrollbar{width:6px}
+.chat-scroll::-webkit-scrollbar-thumb{background:black}
+
+/* score bars */
+.score-bar-clickable{cursor:pointer;transition:opacity 0.15s}
+.score-bar-clickable:hover{opacity:0.75}
+
+/* predicted score note */
+.predicted-note{font-size:11px;font-style:italic;color:rgba(0,0,0,0.45);margin-top:6px;padding:6px 10px;border:1px dashed rgba(0,0,0,0.25);background:hsl(60 14% 97%)}
+
+/* layout helpers */
+.tabs{display:flex;gap:24px;border-bottom:2px solid black;padding:0 clamp(20px,5vw,56px)}
+.sub-tabs{display:flex;gap:8px;margin-bottom:32px;flex-wrap:wrap}
+.grid-2{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:20px}
+.grid-4{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:24px}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+const {useState,useEffect,useRef,useCallback}=React;
+const MAX_CHARS=8000,MIN_CHARS=10;
+
+// ── PROMPTS ──
+
+const SYSTEM_PROMPT=`You are a brutally precise argument analyst. Your job is to dissect the SPECIFIC argument provided and identify its EXACT flaws — not give generic writing advice.
+
+Return ONLY a valid JSON object. No preamble, no code fences, no extra text whatsoever.
+
+SCORING CRITERIA:
+1. logic (integer 0-10): Are conclusions actually supported by the reasoning given IN THIS ARGUMENT?
+2. evidence (integer 0-10): Does the argument cite concrete data, named studies, specific statistics, or real named examples?
+3. clarity (integer 0-10): Is the argument's structure followable? Is the thesis identifiable?
+4. depth (integer 0-10): Does the argument engage with complexity, counterarguments, or real-world nuance?
+5. bias ("Low"/"Medium"/"High"): Does it acknowledge opposing views fairly?
+
+MANDATORY SCORE RULES:
+- No named studies, statistics, or concrete data → evidence MUST be ≤ 3
+- Weak or absent causal reasoning → logic MUST be ≤ 4
+- Only one perspective considered → bias CANNOT be "Low"
+- Sweeping generalizations → bias = "High"
+- Short or underdeveloped argument → depth MUST be ≤ 4
+
+WEAKNESSES — each weakness MUST:
+- Quote or closely paraphrase a specific phrase from the argument
+- Name the exact logical problem by type
+- Explain in 1-2 sentences why this specific flaw weakens THIS argument
+- Minimum 2 weaknesses, maximum 6
+
+IMPROVEMENT_POINTS — each point MUST:
+- Target a specific claim or section of THIS argument
+- Give a concrete, actionable thinking instruction
+- Minimum 2 points, maximum 6
+
+OUTPUT — return EXACTLY this JSON:
+{
+  "logic": <int 0-10>,
+  "evidence": <int 0-10>,
+  "clarity": <int 0-10>,
+  "depth": <int 0-10>,
+  "bias": "Low"|"Medium"|"High",
+  "explanation": "<argument-specific 2-4 sentences>",
+  "weaknesses": ["<specific weakness>", ...],
+  "improvement_points": ["<specific actionable instruction>", ...],
+  "confidence": "Low"|"Medium"|"High"
+}`;
+
+const DEBATE_SYSTEM=`You are a rigorous debate partner and argument analyst. The user has submitted an argument which has been scored, and now they want to discuss it. You have the original argument and its full score report as context. 
+
+Be intellectually honest: concede points that are valid, defend scores that are justified, ask clarifying questions when needed. Keep responses focused and sharp — 3-5 sentences unless a longer response is clearly warranted. No sycophancy.`;
+
+const STRENGTHEN_SYSTEM=`You are an argument architect. You receive a weak or flawed argument and its scores. Your job is to rewrite it so it scores significantly higher under a strict evaluation rubric.
+
+Return ONLY a valid JSON object with these fields:
+{
+  "improved_argument": "<the rewritten argument>",
+  "changes_made": ["<list of specific changes made, 4-6 items>"]
+}
+
+THE SCORING RUBRIC YOU MUST SATISFY (the argument will be re-evaluated against these exact criteria):
+
+LOGIC (target 7+):
+- Every conclusion must follow explicitly from its premises
+- Make causal chains visible: "If X then Y, because Z"
+- No logical leaps, circular reasoning, or unstated assumptions
+- PENALTY: Weak or absent causal reasoning forces logic score to 4 or below
+
+EVIDENCE (target 6+):
+- Cite at least one named real study, named statistic, or named institution with a concrete finding
+- "Companies like Google" or "common patterns show" are NOT evidence and force evidence score to 3 or below
+- Acceptable: "A 2015 Stanford study found...", "OECD 2022 data shows...", "Khan Academy internal data..."
+- If no real study exists, use documented real-world cases with specificity: institution, year, measurable outcome
+- PENALTY: No named studies or concrete data forces evidence score to 3 or below
+
+CLARITY (target 7+):
+- State the thesis clearly in the first 1-2 sentences
+- Each paragraph has one clear function: thesis, evidence, counterargument, or conclusion
+- No vague referents, ambiguous pronouns, or undefined terms
+
+DEPTH (target 7+):
+- Engage with at least one real counterargument and respond with reasoning, not dismissal
+- Acknowledge the limits or conditions of your own claim explicitly
+- PENALTY: Short or underdeveloped argument forces depth score to 4 or below
+
+BIAS (target: Low):
+- Acknowledge the strongest version of the opposing view before countering it
+- Do not strawman or use loaded language against opposition
+- PENALTY: Only one perspective considered means bias cannot be Low
+
+HARD RULES:
+- Preserve the original thesis — do not change what is being argued
+- Write a complete standalone argument — no placeholders like [Study X] or [Source needed]
+- Every sentence must add scoring value — no padding
+- Length should be exactly as long as needed to satisfy the rubric, no longer`;
+
+const DIMENSION_EXPLAIN_SYSTEM=`You are an argument analyst. Given an argument and one of its scores on a specific dimension, explain in exactly 2-3 sentences WHY it received that SPECIFIC score. Start by stating: "You scored [X]/10 in [dimension] because..." Then reference actual phrases or claims from the argument to justify this exact score. Do not give generic advice.`;
+
+const COMPARE_VERDICT_SYSTEM=`You are a debate judge. You have received two arguments and their scores. Write exactly 2 sentences: one declaring which argument is stronger and why, one identifying the single most decisive factor that separates them. Be blunt and specific.`;
+
+const EXAMPLES=[
+  {label:"Weak / Sweeping",text:"Social media is bad for everyone. It ruins lives and should be banned."},
+  {label:"Medium / Partial",text:"Students learn better with technology because computers make lessons more interactive. Most schools use them now, so it must be working. We should give every student a laptop."},
+  {label:"Strong / Balanced",text:"Remote work increases productivity for knowledge workers. A 2015 Stanford study of Ctrip employees found a 13% performance increase among remote workers, attributable to fewer interruptions and quieter environments. However, this benefit is task-dependent — collaborative and mentorship-heavy roles may suffer — so hybrid models likely outperform pure remote for most firms."},
+  {label:"One-Sided / Biased",text:"Nuclear energy is the only sensible solution to climate change. Renewables are unreliable and expensive, and anyone who disagrees just doesn't understand physics. Every country should immediately switch to nuclear power."}
+];
+
+// ── FIX #1: Single shared API helper (no duplication) ──
+async function callGroq(apiKey, messages, systemPrompt, maxTokens=2000){
+  const res=await fetch('https://api.groq.com/openai/v1/chat/completions',{
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+apiKey},
+    body:JSON.stringify({
+      model:'llama-3.3-70b-versatile',
+      temperature:0.4,
+      max_tokens:maxTokens,
+      messages:[{role:'system',content:systemPrompt},...messages]
+    })
+  });
+  if(!res.ok){const e=await res.json();throw new Error(e.error?.message||'Groq API error '+res.status);}
+  const data=await res.json();
+  return (data.choices[0].message.content||'').trim();
+}
+
+// ── FIX #2: Robust JSON parser with multiple fallback strategies ──
+function parseJSON(text){
+  // Strategy 1: strip code fences (greedy)
+  let clean=text.replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,'').trim();
+  // Strategy 2: extract first {...} block if there's extra text
+  const match=clean.match(/\{[\s\S]*\}/);
+  if(match)clean=match[0];
+  try{return JSON.parse(clean);}
+  catch(e){throw new Error('Invalid JSON from model: '+e.message+'\nRaw: '+text.slice(0,200));}
+}
+
+// ── FIX #3: Shared normalise + score logic (single source of truth) ──
+function normaliseScoreResult(p, argumentText){
+  const cl=(n,lo,hi)=>Math.max(lo,Math.min(hi,parseInt(n)||lo));
+  const nrm=(v,opts)=>opts.includes(v)?v:opts[1];
+  const logic=cl(p.logic,0,10),evidence=cl(p.evidence,0,10),clarity=cl(p.clarity,0,10),depth=cl(p.depth,0,10);
+  // FIX #4: bias now included in overall score (weighted as penalty 0-10: Low=0,Medium=3,High=6)
+  const biasVal={Low:0,Medium:3,High:6};
+  const biasStr=nrm(p.bias,['Low','Medium','High']);
+  const biasScore=10-biasVal[biasStr]; // convert to 0-10 score
+  const overall=Math.round((logic+evidence+clarity+depth+biasScore)/5*10)/10;
+  return {
+    id:crypto.randomUUID(),
+    argument:argumentText.trim(),
+    overall_score:overall,
+    logic,evidence,clarity,depth,
+    bias:biasStr,
+    explanation:String(p.explanation||'').trim(),
+    weaknesses:(p.weaknesses||[]).map(x=>String(x).trim()).filter(Boolean),
+    improvement_points:(p.improvement_points||[]).map(x=>String(x).trim()).filter(Boolean),
+    confidence:nrm(p.confidence,['Low','Medium','High']),
+    created_at:new Date().toISOString()
+  };
+}
+
+// ── FIX #5: Rate limiter — prevents double-submit and concurrent calls ──
+function useRateLimiter(minMs=1000){
+  const lastCall=useRef(0);
+  return useCallback(()=>{
+    const now=Date.now();
+    if(now-lastCall.current<minMs)return false;
+    lastCall.current=now;
+    return true;
+  },[minMs]);
+}
+
+// ── COMPONENTS ──
+
+function ErrorBanner({message,onDismiss}){
+  if(!message)return null;
+  return React.createElement('div',{style:{border:'2px solid #DC2626',background:'#FEF2F2',padding:'12px 16px',display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:'12px',marginBottom:'20px',boxShadow:'3px 3px 0 #DC2626'}},
+    React.createElement('div',{style:{display:'flex',gap:'10px',alignItems:'flex-start'}},
+      React.createElement('span',{style:{color:'#DC2626',fontWeight:700,flexShrink:0}},'⚠'),
+      React.createElement('span',{className:'mono',style:{fontSize:'12px',color:'#DC2626',lineHeight:1.5}},message)
+    ),
+    React.createElement('button',{onClick:onDismiss,style:{background:'none',border:'none',cursor:'pointer',color:'#DC2626',fontWeight:700,fontSize:'16px',flexShrink:0,lineHeight:1}},'×')
+  );
+}
+
+function SegBar({value=0,max=10,label,onClick,clickable}){
+  const filled=Math.max(0,Math.min(max,Math.round(value)));
+  return React.createElement('div',{
+    style:{width:'100%'},
+    className:clickable?'score-bar-clickable':'',
+    onClick:onClick,
+    title:clickable?`Click to explain ${label} score`:'',
+    role:clickable?'button':undefined,
+    tabIndex:clickable?0:undefined
+  },
+    React.createElement('div',{style:{display:'flex',alignItems:'baseline',justifyContent:'space-between',marginBottom:'8px'}},
+      React.createElement('span',{className:'mono',style:{fontSize:'11px',textTransform:'uppercase',letterSpacing:'0.22em',fontWeight:700}},label,
+        clickable&&React.createElement('span',{style:{fontSize:'9px',marginLeft:'6px',color:'rgba(0,0,0,0.4)',verticalAlign:'middle'}},'💬')
+      ),
+      React.createElement('span',{className:'mono',style:{fontSize:'20px',fontWeight:700}},value,React.createElement('span',{style:{color:'rgba(0,0,0,0.4)',fontSize:'14px'}},'/'+max))
+    ),
+    React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(10,1fr)',gap:'3px',border:'2px solid black',padding:'3px',background:'white'}},
+      Array.from({length:max}).map((_,i)=>React.createElement('div',{key:i,style:{height:'12px',background:i<filled?'black':'transparent'}}))
+    )
+  );
+}
+
+function Badge({text,bg,color}){
+  return React.createElement('span',{className:'mono',style:{display:'inline-flex',alignItems:'center',border:'2px solid black',padding:'4px 12px',fontSize:'11px',textTransform:'uppercase',letterSpacing:'0.22em',fontWeight:700,background:bg,color}},text);
+}
+
+// ── DIMENSION EXPLAIN PANEL ──
+// FIX #6: proper useEffect deps
+function DimensionExplainPanel({dimension,value,argument,apiKey,onClose}){
+  const [loading,setLoading]=useState(true);
+  const [explanation,setExplanation]=useState('');
+  const [error,setError]=useState('');
+  const panelRef=useRef(null);
+
+  useEffect(()=>{
+    let cancelled=false;
+    (async()=>{
+      try{
+        const prompt=`Argument:\n${argument}\n\nThis argument scored ${value}/10 on ${dimension}. Explain why in 2-3 sentences, referencing specific phrases.`;
+        const text=await callGroq(apiKey,[{role:'user',content:prompt}],DIMENSION_EXPLAIN_SYSTEM,300);
+        if(!cancelled)setExplanation(text);
+      }catch(e){
+        if(!cancelled)setError(e.message);
+      }finally{
+        if(!cancelled)setLoading(false);
+      }
+    })();
+    return()=>{cancelled=true;};
+  },[apiKey,argument,dimension,value]); // FIX: all deps listed
+
+  useEffect(()=>{
+    const handler=(e)=>{if(panelRef.current&&!panelRef.current.contains(e.target))onClose();};
+    document.addEventListener('mousedown',handler);
+    return()=>document.removeEventListener('mousedown',handler);
+  },[onClose]);
+
+  return React.createElement('div',{style:{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:60,padding:'16px'}},
+    React.createElement('div',{ref:panelRef,style:{background:'white',border:'2px solid black',boxShadow:'6px 6px 0 black',padding:'28px',maxWidth:'480px',width:'100%',position:'relative'}},
+      React.createElement('button',{onClick:onClose,style:{position:'absolute',top:'12px',right:'12px',background:'none',border:'none',cursor:'pointer',fontSize:'18px',lineHeight:1}},'×'),
+      React.createElement('div',{className:'mono',style:{fontSize:'10px',textTransform:'uppercase',letterSpacing:'0.25em',color:'rgba(0,0,0,0.5)',marginBottom:'6px'}},'Score Explanation'),
+      React.createElement('h3',{className:'serif',style:{fontSize:'22px',fontWeight:700,marginBottom:'16px',borderBottom:'3px solid black',paddingBottom:'6px',display:'inline-block'}},dimension,' · ',value,'/10'),
+      loading
+        ? React.createElement('div',{style:{display:'flex',gap:'10px',alignItems:'center',padding:'8px 0'}},
+            React.createElement('span',{className:'spin'},'⟳'),
+            React.createElement('span',{className:'mono',style:{fontSize:'12px',color:'rgba(0,0,0,0.6)'}},'Analyzing...')
+          )
+        : error
+        ? React.createElement('p',{style:{color:'#DC2626',fontSize:'14px'}},error)
+        : React.createElement('p',{style:{fontSize:'15px',lineHeight:1.75,color:'rgba(0,0,0,0.85)'}},explanation)
+    )
+  );
+}
+
+// ── DEBATE CHAT ──
+function DebateChat({argument,result,apiKey}){
+  const [messages,setMessages]=useState([]);
+  const [input,setInput]=useState('');
+  const [loading,setLoading]=useState(false);
+  const [error,setError]=useState('');
+  const chatEndRef=useRef(null);
+  const canSend=useRateLimiter(800); // FIX #5: rate limit
+
+  useEffect(()=>{
+    chatEndRef.current?.scrollIntoView({behavior:'smooth'});
+  },[messages]);
+
+  const contextBlock=`ORIGINAL ARGUMENT:\n${argument}\n\nSCORE REPORT:\nLogic: ${result.logic}/10\nEvidence: ${result.evidence}/10\nClarity: ${result.clarity}/10\nDepth: ${result.depth}/10\nBias: ${result.bias}\nOverall: ${result.overall_score}/10\n\nExplanation: ${result.explanation}\n\nWeaknesses:\n${result.weaknesses.map((w,i)=>`${i+1}. ${w}`).join('\n')}\n\nImprovement Points:\n${result.improvement_points.map((p,i)=>`${i+1}. ${p}`).join('\n')}`;
+
+  const sendMessage=async()=>{
+    if(!input.trim()||loading)return;
+    if(!canSend())return; // rate limit guard
+    const userMsg={role:'user',content:input.trim()};
+    const newMsgs=[...messages,userMsg];
+    setMessages(newMsgs);
+    setInput('');
+    setLoading(true);
+    setError('');
+    try{
+      const apiMessages=[
+        {role:'user',content:'CONTEXT FOR THIS DEBATE:\n'+contextBlock+'\n\n---\nNow the user wants to discuss this. Here is their first message:'},
+        {role:'assistant',content:"Understood. I have the full score report and the original argument in context. I'm ready to debate. What's your point?"},
+        ...newMsgs
+      ];
+      const text=await callGroq(apiKey,apiMessages,DEBATE_SYSTEM,600);
+      setMessages(prev=>[...prev,{role:'assistant',content:text}]);
+    }catch(e){setError(e.message);}
+    finally{setLoading(false);}
+  };
+
+  const handleKey=(e)=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage();}};
+
+  return React.createElement('div',{style:{marginTop:'32px',border:'2px solid black',background:'white',boxShadow:'4px 4px 0 black'}},
+    React.createElement('div',{style:{borderBottom:'2px solid black',padding:'14px 20px',display:'flex',alignItems:'center',gap:'12px',background:'black',color:'white'}},
+      React.createElement('span',{style:{fontSize:'18px'}},'⚔'),
+      React.createElement('div',{},
+        React.createElement('div',{className:'mono',style:{fontSize:'11px',textTransform:'uppercase',letterSpacing:'0.22em',fontWeight:700}},'Multi-Turn Debate')
+      )
+    ),
+    messages.length===0&&React.createElement('div',{style:{padding:'24px',borderBottom:'2px dashed rgba(0,0,0,0.2)'}},
+      React.createElement('p',{className:'serif',style:{fontSize:'16px',fontStyle:'italic',color:'rgba(0,0,0,0.6)',lineHeight:1.6}},'The scorer knows your argument and its full report. Challenge a weakness, dispute a score, or ask for clarification.'),
+      React.createElement('div',{style:{display:'flex',flexWrap:'wrap',gap:'8px',marginTop:'12px'}},
+        ["I disagree with weakness #1","Why is my evidence score so low?","What would make this a 9/10?"].map(s=>
+          React.createElement('button',{key:s,onClick:()=>setInput(s),style:{fontFamily:'IBM Plex Mono',fontSize:'10px',textTransform:'uppercase',letterSpacing:'0.15em',border:'2px solid black',background:'hsl(60 14% 95%)',padding:'5px 10px',cursor:'pointer'}},s)
+        )
+      )
+    ),
+    messages.length>0&&React.createElement('div',{className:'chat-scroll',style:{padding:'20px',display:'flex',flexDirection:'column',gap:'16px'}},
+      messages.map((m,i)=>React.createElement('div',{key:i,style:{display:'flex',flexDirection:'column',alignItems:m.role==='user'?'flex-end':'flex-start'}},
+        React.createElement('div',{className:'mono',style:{fontSize:'9px',textTransform:'uppercase',letterSpacing:'0.2em',color:'rgba(0,0,0,0.4)',marginBottom:'4px'}},m.role==='user'?'You':'ArgusScorer'),
+        React.createElement('div',{style:{maxWidth:'85%',border:'2px solid black',padding:'12px 16px',background:m.role==='user'?'black':'white',color:m.role==='user'?'white':'black',fontSize:'14px',lineHeight:1.65,fontFamily:'IBM Plex Sans'}},m.content)
+      )),
+      loading&&React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'8px'}},
+        React.createElement('span',{className:'spin',style:{fontSize:'16px'}},'⟳'),
+        React.createElement('span',{className:'mono',style:{fontSize:'11px',color:'rgba(0,0,0,0.5)'}},'Thinking...')
+      ),
+      React.createElement('div',{ref:chatEndRef})
+    ),
+    error&&React.createElement('div',{style:{padding:'12px 20px'}},
+      React.createElement(ErrorBanner,{message:error,onDismiss:()=>setError('')})
+    ),
+    React.createElement('div',{style:{borderTop:'2px solid black',padding:'16px',display:'flex',gap:'10px'}},
+      React.createElement('textarea',{value:input,onChange:e=>setInput(e.target.value),onKeyDown:handleKey,placeholder:'Press Enter to send · Shift+Enter for newline',rows:2,
+        style:{flex:1,border:'2px solid black',padding:'10px',fontFamily:'IBM Plex Sans',fontSize:'14px',resize:'none',outline:'none',background:'hsl(60 14% 97%)'}}),
+      React.createElement('button',{onClick:sendMessage,disabled:!input.trim()||loading,
+        style:{fontFamily:'IBM Plex Mono',fontSize:'11px',textTransform:'uppercase',letterSpacing:'0.15em',fontWeight:700,border:'2px solid black',background:'black',color:'white',padding:'10px 18px',cursor:'pointer',flexShrink:0,alignSelf:'flex-end'}},
+        loading?'…':'Send')
+    )
+  );
+}
+
+// ── ARGUMENT STRENGTHENER ──
+// FIX #8: standalone strengthen input when no result exists
+// FIX #9: auto-rescore improved argument instead of showing model's unverified predicted scores
+function ArgumentStrengthener({argument,result,apiKey,onCompare}){
+  const [loading,setLoading]=useState(false);
+  const [strengthenResult,setStrengthenResult]=useState(null);
+  const [improvedScore,setImprovedScore]=useState(null); // real verified score
+  const [rescoring,setRescoring]=useState(false);
+  const [error,setError]=useState('');
+  const [standaloneArg,setStandaloneArg]=useState('');
+  const canSend=useRateLimiter(1500);
+
+  // use passed argument or standalone input
+  const activeArg=argument||standaloneArg;
+  const isStandalone=!argument;
+
+  const runStrengthen=async()=>{
+    if(!activeArg.trim())return;
+    if(!canSend())return;
+    setLoading(true);setError('');setStrengthenResult(null);setImprovedScore(null);
+    try{
+      // Step 1: Strengthen
+      const scoreContext=result
+        ?`CURRENT SCORES:\nLogic: ${result.logic}/10, Evidence: ${result.evidence}/10, Clarity: ${result.clarity}/10, Depth: ${result.depth}/10\n\nWeaknesses identified:\n${result.weaknesses.join('\n')}`
+        :'No prior scores available — analyze and improve the argument holistically.';
+      const prompt=`ORIGINAL ARGUMENT:\n${activeArg}\n\n${scoreContext}\n\nRewrite this argument to be significantly stronger. Return only the JSON object.`;
+      const text=await callGroq(apiKey,[{role:'user',content:prompt}],STRENGTHEN_SYSTEM,1200);
+      const p=parseJSON(text);
+      setStrengthenResult(p);
+      setLoading(false);
+
+      // Step 2: Auto-rescore the improved argument (real verified score)
+      if(p.improved_argument){
+        setRescoring(true);
+        try{
+          const raw=await callGroq(apiKey,[
+            {role:'user',content:'ARGUMENT TO EVALUATE:\n\n'+p.improved_argument.trim()+'\n\nAnalyze ONLY this specific argument. Return ONLY the JSON object.'}
+          ],SYSTEM_PROMPT,2000);
+          const scored=normaliseScoreResult(parseJSON(raw),p.improved_argument);
+          setImprovedScore(scored);
+        }catch(e){
+          // rescore failed — silently skip, don't block the strengthened text
+          console.warn('Auto-rescore failed:',e.message);
+        }finally{setRescoring(false);}
+      }
+    }catch(e){setError(e.message);setLoading(false);}
+  };
+
+  return React.createElement('div',{style:{marginTop:'20px',border:'2px solid black',background:'white',boxShadow:'4px 4px 0 black'}},
+    React.createElement('div',{style:{borderBottom:'2px solid black',padding:'14px 20px',display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:'12px'}},
+      React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px'}},
+        React.createElement('span',{style:{fontSize:'18px'}},'✦'),
+        React.createElement('div',{},
+          React.createElement('div',{className:'mono',style:{fontSize:'11px',textTransform:'uppercase',letterSpacing:'0.22em',fontWeight:700}},'Argument Improvement Assistant')
+        )
+      ),
+      !strengthenResult&&React.createElement('button',{onClick:runStrengthen,disabled:loading||!activeArg.trim(),
+        style:{fontFamily:'IBM Plex Mono',fontSize:'11px',textTransform:'uppercase',letterSpacing:'0.18em',fontWeight:700,border:'2px solid black',background:'black',color:'white',padding:'10px 18px',cursor:'pointer'}},
+        loading?React.createElement(React.Fragment,null,React.createElement('span',{className:'spin'},'⟳'),' Strengthening…'):'→ Strengthen My Argument')
+    ),
+
+    // FIX #8: standalone text input when no prior score
+    isStandalone&&React.createElement('div',{style:{padding:'20px',borderBottom:'2px solid black'}},
+      React.createElement('div',{className:'mono',style:{fontSize:'10px',textTransform:'uppercase',letterSpacing:'0.22em',fontWeight:700,marginBottom:'8px'}},'Paste your argument'),
+      React.createElement('textarea',{value:standaloneArg,onChange:e=>setStandaloneArg(e.target.value),
+        placeholder:'You can strengthen any argument directly here without scoring first…',rows:6,
+        style:{width:'100%',border:'2px solid black',padding:'14px',fontFamily:'IBM Plex Sans',fontSize:'15px',outline:'none',resize:'vertical',background:'hsl(60 14% 97%)'}})
+    ),
+
+    error&&React.createElement('div',{style:{padding:'16px'}},React.createElement(ErrorBanner,{message:error,onDismiss:()=>setError('')})),
+
+    !strengthenResult&&!loading&&React.createElement('div',{style:{padding:'24px'}},
+      React.createElement('p',{className:'serif',style:{fontSize:'15px',fontStyle:'italic',color:'rgba(0,0,0,0.55)',lineHeight:1.6}},'The AI will rewrite your argument with better structure, added evidence, and tighter logic — displayed side-by-side with the original.')
+    ),
+
+    strengthenResult&&React.createElement('div',{style:{padding:'24px'}},
+      React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(280px,1fr))',gap:'20px',marginBottom:'24px'}},
+        React.createElement('div',{style:{border:'2px solid black',padding:'20px',background:'hsl(60 14% 97%)'}},
+          React.createElement('div',{className:'mono',style:{fontSize:'10px',textTransform:'uppercase',letterSpacing:'0.22em',fontWeight:700,marginBottom:'12px',color:'rgba(0,0,0,0.5)'}},'Original'),
+          React.createElement('p',{style:{fontSize:'16px',lineHeight:1.75,fontWeight:500,fontFamily:'IBM Plex Sans'}},activeArg)
+        ),
+        React.createElement('div',{style:{border:'2px solid black',padding:'20px',background:'white',position:'relative'}},
+          React.createElement('div',{style:{position:'absolute',top:'-2px',left:'-2px',background:'black',color:'white',padding:'3px 10px'}},
+            React.createElement('span',{className:'mono',style:{fontSize:'9px',textTransform:'uppercase',letterSpacing:'0.2em',fontWeight:700}},'Strengthened ✦')
+          ),
+          React.createElement('p',{style:{fontSize:'16px',lineHeight:1.75,marginTop:'8px',fontWeight:500,fontFamily:'IBM Plex Sans'}},strengthenResult.improved_argument)
+        )
+      ),
+      React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(240px,1fr))',gap:'16px',marginBottom:'20px'}},
+        React.createElement('div',{style:{border:'2px solid black',padding:'16px'}},
+          React.createElement('div',{className:'mono',style:{fontSize:'10px',textTransform:'uppercase',letterSpacing:'0.22em',fontWeight:700,marginBottom:'12px'}},'Changes Made'),
+          React.createElement('ul',{style:{listStyle:'none',display:'flex',flexDirection:'column',gap:'8px'}},
+            (strengthenResult.changes_made||[]).map((c,i)=>React.createElement('li',{key:i,style:{display:'flex',gap:'10px',fontSize:'13px',lineHeight:1.55}},
+              React.createElement('span',{className:'mono',style:{fontWeight:700,flexShrink:0}},String(i+1).padStart(2,'0')),
+              React.createElement('span',{},c)
+            ))
+          )
+        ),
+        React.createElement('div',{style:{border:'2px solid black',padding:'16px'}},
+          React.createElement('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'12px'}},
+            React.createElement('div',{className:'mono',style:{fontSize:'10px',textTransform:'uppercase',letterSpacing:'0.22em',fontWeight:700}},'Verified Scores'),
+            rescoring&&React.createElement('span',{className:'mono',style:{fontSize:'10px',color:'rgba(0,0,0,0.5)',display:'flex',alignItems:'center',gap:'6px'}},
+              React.createElement('span',{className:'spin'},'⟳'),'Scoring…'
+            ),
+            improvedScore&&React.createElement('span',{className:'mono',style:{fontSize:'10px',color:'#10B981',fontWeight:700}},'✓ Real Score')
+          ),
+          rescoring&&!improvedScore&&React.createElement('p',{style:{fontSize:'12px',color:'rgba(0,0,0,0.5)',fontStyle:'italic',marginBottom:'8px'}},'Running actual evaluation on improved argument…'),
+          ['logic','evidence','clarity','depth'].map(k=>React.createElement('div',{key:k,style:{display:'flex',justifyContent:'space-between',alignItems:'center',borderBottom:'1px solid rgba(0,0,0,0.1)',padding:'6px 0'}},
+            React.createElement('span',{className:'mono',style:{fontSize:'11px',textTransform:'uppercase',letterSpacing:'0.15em'}},[k]),
+            React.createElement('span',{className:'mono',style:{fontSize:'18px',fontWeight:700}},
+              result&&React.createElement('span',{style:{color:'rgba(0,0,0,0.35)',fontSize:'13px',fontWeight:400}},result[k],' → '),
+              improvedScore
+                ? React.createElement('span',{style:{color:improvedScore[k]>=(result?.[k]||0)?'#10B981':'#DC2626'}},improvedScore[k])
+                : rescoring
+                ? React.createElement('span',{style:{color:'rgba(0,0,0,0.25)'}},'…')
+                : React.createElement('span',{style:{color:'rgba(0,0,0,0.25)'}},'-')
+            )
+          )),
+          improvedScore&&React.createElement('div',{style:{marginTop:'10px',paddingTop:'10px',borderTop:'2px solid black',display:'flex',justifyContent:'space-between',alignItems:'baseline'}},
+            React.createElement('span',{className:'mono',style:{fontSize:'11px',textTransform:'uppercase',letterSpacing:'0.15em'}},'Overall'),
+            React.createElement('span',{className:'mono',style:{fontSize:'22px',fontWeight:900}},
+              result&&React.createElement('span',{style:{color:'rgba(0,0,0,0.35)',fontSize:'13px',fontWeight:400}},result.overall_score.toFixed(1),' → '),
+              React.createElement('span',{style:{color:improvedScore.overall_score>=(result?.overall_score||0)?'#10B981':'#DC2626'}},improvedScore.overall_score.toFixed(1))
+            )
+          )
+        )
+      ),
+      onCompare&&React.createElement('button',{onClick:()=>onCompare(activeArg,strengthenResult.improved_argument),
+        style:{fontFamily:'IBM Plex Mono',fontSize:'12px',textTransform:'uppercase',letterSpacing:'0.2em',fontWeight:700,border:'2px solid black',background:'white',padding:'12px 24px',cursor:'pointer',boxShadow:'3px 3px 0 black',width:'100%'}},
+        '⚖ Compare Original vs Improved')
+    )
+  );
+}
+
+// ── SCORE CARD ──
+function ScoreCard({result,apiKey}){
+  const [explainPanel,setExplainPanel]=useState(null);
+  const biasMap={Low:{bg:'#9EE493',color:'black'},Medium:{bg:'#F6D452',color:'black'},High:{bg:'#DC2626',color:'white'}};
+  const confMap={High:{bg:'black',color:'white'},Medium:{bg:'#E5E5E5',color:'black'},Low:{bg:'white',color:'black'}};
+  const bm=biasMap[result.bias]||biasMap.Medium;
+  const cm=confMap[result.confidence]||confMap.Medium;
+  const dims=['Logic','Evidence','Clarity','Depth'];
+
+  return React.createElement(React.Fragment,null,
+    explainPanel&&React.createElement(DimensionExplainPanel,{
+      dimension:explainPanel.dimension,
+      value:explainPanel.value,
+      argument:result.argument,
+      apiKey,
+      onClose:()=>setExplainPanel(null)
+    }),
+    React.createElement('section',{className:'snap-in',style:{background:'white',border:'2px solid black',boxShadow:'4px 4px 0 #0a0a0a',padding:'clamp(24px,4vw,40px)'}},
+      React.createElement('div',{style:{display:'flex',flexWrap:'wrap',alignItems:'flex-end',justifyContent:'space-between',gap:'24px',borderBottom:'2px solid black',paddingBottom:'24px',marginBottom:'32px'}},
+        React.createElement('div',{},
+          React.createElement('div',{className:'mono',style:{fontSize:'11px',textTransform:'uppercase',letterSpacing:'0.25em',fontWeight:600,color:'rgba(0,0,0,0.6)',marginBottom:'8px'}},'Overall Verdict'),
+          React.createElement('div',{style:{display:'flex',alignItems:'baseline',gap:'8px'}},
+            React.createElement('span',{className:'mono',style:{fontSize:'clamp(72px,12vw,110px)',fontWeight:900,lineHeight:1,letterSpacing:'-0.04em'}},result.overall_score.toFixed(1)),
+            React.createElement('span',{className:'serif',style:{fontSize:'28px',fontStyle:'italic',color:'rgba(0,0,0,0.5)'}},'/\u00a010')
+          ),
+          // FIX #4: updated label thresholds to reflect bias now in score
+          React.createElement('div',{className:'mono',style:{fontSize:'13px',fontWeight:700,textTransform:'uppercase',letterSpacing:'0.18em',marginTop:'8px',padding:'6px 14px',display:'inline-block',border:'2px solid black',background:result.overall_score<4?'#DC2626':result.overall_score<7?'#F59E0B':'#10B981',color:'white'}},
+            result.overall_score<4?'Weak':result.overall_score<7?'Medium':'Strong'
+          )
+        ),
+        React.createElement('div',{style:{display:'flex',flexWrap:'wrap',gap:'10px'}},
+          React.createElement(Badge,{text:'Bias · '+result.bias,...bm}),
+          React.createElement(Badge,{text:'Confidence · '+result.confidence,...cm})
+        )
+      ),
+      React.createElement('div',{className:'mono',style:{fontSize:'10px',textTransform:'uppercase',letterSpacing:'0.22em',color:'rgba(0,0,0,0.5)',marginBottom:'16px'}},'↑ Click any score bar for an explanation'),
+      React.createElement('div',{className:'grid-4',style:{marginBottom:'40px'}},
+        dims.map(dim=>React.createElement(SegBar,{
+          key:dim,label:dim,value:result[dim.toLowerCase()],clickable:true,
+          onClick:()=>setExplainPanel({dimension:dim,value:result[dim.toLowerCase()]})
+        }))
+      ),
+      React.createElement('div',{style:{marginBottom:'40px'}},
+        React.createElement('h3',{className:'serif',style:{fontSize:'26px',fontWeight:700,borderBottom:'3px solid black',paddingBottom:'4px',display:'inline-block',marginBottom:'12px'}},'Explanation'),
+        React.createElement('p',{style:{fontSize:'15px',lineHeight:1.75,color:'rgba(0,0,0,0.88)'}},result.explanation)
+      ),
+      React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(260px,1fr))',gap:'20px'}},
+        React.createElement('div',{style:{border:'2px solid black',background:'hsl(60 14% 97%)',padding:'20px'}},
+          React.createElement('h3',{className:'serif',style:{fontSize:'22px',fontWeight:700,borderBottom:'3px solid #DC2626',paddingBottom:'4px',color:'#DC2626',display:'inline-block',marginBottom:'16px'}},'Weaknesses'),
+          result.weaknesses&&result.weaknesses.length>0
+            ? React.createElement('ul',{style:{listStyle:'none',display:'flex',flexDirection:'column',gap:'14px'}},
+                result.weaknesses.map((w,i)=>React.createElement('li',{key:i,style:{display:'flex',gap:'12px',fontSize:'14px',lineHeight:1.65}},
+                  React.createElement('span',{className:'mono',style:{fontWeight:700,color:'#DC2626',flexShrink:0,paddingTop:'2px'}},String(i+1).padStart(2,'0')),
+                  React.createElement('span',{},w)
+                ))
+              )
+            : React.createElement('p',{className:'serif',style:{fontStyle:'italic',color:'rgba(0,0,0,0.45)',fontSize:'15px'}},'No specific weaknesses identified.')
+        ),
+        React.createElement('div',{style:{border:'2px solid black',background:'white',padding:'20px'}},
+          React.createElement('h3',{className:'serif',style:{fontSize:'22px',fontWeight:700,borderBottom:'3px solid black',paddingBottom:'4px',display:'inline-block',marginBottom:'16px'}},'Improvement Points'),
+          result.improvement_points&&result.improvement_points.length>0
+            ? React.createElement('ul',{style:{listStyle:'none',display:'flex',flexDirection:'column',gap:'14px'}},
+                result.improvement_points.map((w,i)=>React.createElement('li',{key:i,style:{display:'flex',gap:'12px',fontSize:'14px',lineHeight:1.65}},
+                  React.createElement('span',{className:'mono',style:{fontWeight:700,flexShrink:0,paddingTop:'2px'}},String(i+1).padStart(2,'0')),
+                  React.createElement('span',{},w)
+                ))
+              )
+            : React.createElement('p',{className:'serif',style:{fontStyle:'italic',color:'rgba(0,0,0,0.45)',fontSize:'15px'}},'No improvement points recorded.')
+        )
+      ),
+      React.createElement('div',{className:'mono',style:{marginTop:'28px',paddingTop:'16px',borderTop:'2px solid black',fontSize:'11px',textTransform:'uppercase',letterSpacing:'0.22em',color:'rgba(0,0,0,0.5)',display:'flex',flexWrap:'wrap',justifyContent:'space-between',gap:'8px'}},
+        React.createElement('span',{},'Evaluated: '+new Date(result.created_at).toLocaleString()),
+        React.createElement('span',{},'Report ID · '+result.id.slice(0,8))
+      )
+    )
+  );
+}
+
+// ── HISTORY ITEM ──
+function HistoryItem({item,onClick}){
+  const biasBg={Low:{background:'#9EE493',color:'black'},Medium:{background:'#F6D452',color:'black'},High:{background:'#DC2626',color:'white'}};
+  const b=biasBg[item.bias]||biasBg.Medium;
+  return React.createElement('div',{
+    onClick,
+    style:{border:'2px solid black',background:'white',marginBottom:'16px',padding:'20px',cursor:'pointer',boxShadow:'3px 3px 0 black',transition:'background 0.2s'}
+  },
+    React.createElement('div',{style:{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:'16px'}},
+      React.createElement('div',{style:{flex:1}},
+        React.createElement('p',{className:'serif',style:{fontSize:'16px',fontStyle:'italic',color:'rgba(0,0,0,0.85)',lineHeight:1.4,marginBottom:'12px'}},
+          '"'+(item.argument.length>120?item.argument.slice(0,120)+'...':item.argument)+'"'
+        ),
+        React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'10px',flexWrap:'wrap'}},
+          React.createElement('span',{className:'mono',style:{fontSize:'10px',border:'2px solid black',padding:'2px 8px',textTransform:'uppercase',fontWeight:700,...b}},'Bias · '+item.bias),
+          item.source&&React.createElement('span',{className:'mono',style:{fontSize:'10px',color:'rgba(0,0,0,0.4)',border:'1px dashed rgba(0,0,0,0.25)',padding:'2px 6px'}},item.source),
+          React.createElement('span',{className:'mono',style:{fontSize:'10px',color:'rgba(0,0,0,0.5)'}},new Date(item.created_at).toLocaleString())
+        )
+      ),
+      React.createElement('div',{style:{textAlign:'right',flexShrink:0}},
+        React.createElement('div',{className:'mono',style:{fontSize:'32px',fontWeight:900,lineHeight:1}},item.overall_score.toFixed(1)),
+        React.createElement('div',{className:'mono',style:{fontSize:'10px',color:'rgba(0,0,0,0.4)',textTransform:'uppercase'}},'Score')
+      )
+    )
+  );
+}
+
+// ── COMPARE MODE ──
+// FIX #7: compare auto-saves both results
+function CompareMode({apiKey,prefill,onClearPrefill,saveToHistory}){
+  const [argA,setArgA]=useState('');
+  const [argB,setArgB]=useState('');
+  const [loading,setLoading]=useState(false);
+  const [results,setResults]=useState(null);
+  const [error,setError]=useState('');
+  const canSend=useRateLimiter(2000);
+
+  useEffect(()=>{
+    if(prefill){
+      setArgA(prefill.argA||'');
+      setArgB(prefill.argB||'');
+      if(onClearPrefill)onClearPrefill();
+    }
+  },[prefill,onClearPrefill]);
+
+  // FIX #1: reuses shared normaliseScoreResult
+  const scoreArg=async(text)=>{
+    const raw=await callGroq(apiKey,[
+      {role:'user',content:'ARGUMENT TO EVALUATE:\n\n'+text.trim()+'\n\nReturn ONLY the JSON object.'}
+    ],SYSTEM_PROMPT,1500);
+    const p=parseJSON(raw);
+    return normaliseScoreResult(p,text);
+  };
+
+  const runCompare=async()=>{
+    if(!argA.trim()||!argB.trim())return;
+    if(!canSend())return;
+    setLoading(true);setError('');setResults(null);
+    try{
+      const [a,b]=await Promise.all([scoreArg(argA),scoreArg(argB)]);
+      const verdictPrompt=`ARGUMENT A (Score: ${a.overall_score}/10):\n${a.argument}\n\nARGUMENT B (Score: ${b.overall_score}/10):\n${b.argument}\n\nWrite a 2-sentence verdict: which is stronger and why, and the single most decisive factor.`;
+      const verdict=await callGroq(apiKey,[{role:'user',content:verdictPrompt}],COMPARE_VERDICT_SYSTEM,200);
+      const finalResults={a,b,verdict};
+      setResults(finalResults);
+      // FIX #7: auto-save both to history
+      saveToHistory({...a},'compare · A');
+      saveToHistory({...b},'compare · B');
+    }catch(e){setError(e.message);}
+    finally{setLoading(false);}
+  };
+
+  const canCompare=argA.trim().length>=MIN_CHARS&&argB.trim().length>=MIN_CHARS&&!loading;
+
+  const MiniScoreCard=({r,label})=>React.createElement('div',{style:{border:'2px solid black',padding:'20px',background:'white',flex:1,minWidth:'260px'}},
+    React.createElement('div',{className:'mono',style:{fontSize:'10px',textTransform:'uppercase',letterSpacing:'0.25em',fontWeight:700,marginBottom:'12px',color:'rgba(0,0,0,0.5)'}},label),
+    React.createElement('div',{className:'mono',style:{fontSize:'clamp(44px,8vw,64px)',fontWeight:900,lineHeight:1,marginBottom:'16px'}},r.overall_score.toFixed(1),React.createElement('span',{style:{fontSize:'18px',fontWeight:400,color:'rgba(0,0,0,0.4)'}},'/10')),
+    ['logic','evidence','clarity','depth'].map(k=>React.createElement('div',{key:k,style:{display:'flex',justifyContent:'space-between',borderBottom:'1px solid rgba(0,0,0,0.1)',padding:'5px 0',fontSize:'13px'}},
+      React.createElement('span',{className:'mono',style:{textTransform:'uppercase',letterSpacing:'0.15em',fontSize:'11px'}},[k]),
+      React.createElement('span',{className:'mono',style:{fontWeight:700}},r[k])
+    )),
+    React.createElement('div',{style:{marginTop:'12px',fontSize:'13px',lineHeight:1.6,color:'rgba(0,0,0,0.7)',fontStyle:'italic',fontFamily:'Cormorant Garamond'}},r.explanation)
+  );
+
+  return React.createElement('div',{style:{border:'2px solid black',background:'hsl(60 14% 97%)',boxShadow:'4px 4px 0 black'}},
+    React.createElement('div',{style:{borderBottom:'2px solid black',padding:'16px 24px',background:'black',color:'white',display:'flex',alignItems:'center',gap:'12px'}},
+      React.createElement('span',{style:{fontSize:'18px'}},'⚖'),
+      React.createElement('div',{},
+        React.createElement('div',{className:'mono',style:{fontSize:'11px',textTransform:'uppercase',letterSpacing:'0.22em',fontWeight:700}},'Comparison Mode')
+      )
+    ),
+    React.createElement('div',{style:{padding:'24px'}},
+      error&&React.createElement(ErrorBanner,{message:error,onDismiss:()=>setError('')}),
+      React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(260px,1fr))',gap:'16px',marginBottom:'20px'}},
+        ['A','B'].map((label,idx)=>React.createElement('div',{key:label},
+          React.createElement('div',{className:'mono',style:{fontSize:'10px',textTransform:'uppercase',letterSpacing:'0.22em',fontWeight:700,marginBottom:'8px'}},'Argument '+label),
+          React.createElement('textarea',{
+            value:idx===0?argA:argB,
+            onChange:e=>idx===0?setArgA(e.target.value):setArgB(e.target.value),
+            placeholder:'Paste argument '+label+' here…',
+            rows:6,
+            style:{width:'100%',border:'2px solid black',padding:'14px',fontFamily:'IBM Plex Sans',fontSize:'16px',fontWeight:500,outline:'none',resize:'vertical',background:'white'}
+          })
+        ))
+      ),
+      React.createElement('button',{onClick:runCompare,disabled:!canCompare,
+        style:{fontFamily:'IBM Plex Mono',fontSize:'12px',textTransform:'uppercase',letterSpacing:'0.22em',fontWeight:700,border:'2px solid black',background:'black',color:'white',padding:'14px 28px',cursor:canCompare?'pointer':'not-allowed',boxShadow:'4px 4px 0 rgba(0,0,0,0.3)',marginBottom:'24px'}},
+        loading?React.createElement(React.Fragment,null,React.createElement('span',{className:'spin'},'⟳'),' Scoring both arguments…'):'→ Compare Arguments'
+      ),
+      // FIX #7: no save prompt — auto saved, just show note
+      results&&React.createElement('div',{className:'snap-in'},
+        React.createElement('div',{style:{display:'flex',flexWrap:'wrap',gap:'16px',marginBottom:'20px'}},
+          React.createElement(MiniScoreCard,{r:results.a,label:'Argument A'}),
+          React.createElement(MiniScoreCard,{r:results.b,label:'Argument B'})
+        ),
+        React.createElement('div',{style:{border:'2px solid black',background:'black',color:'white',padding:'20px'}},
+          React.createElement('div',{className:'mono',style:{fontSize:'10px',textTransform:'uppercase',letterSpacing:'0.25em',color:'rgba(255,255,255,0.5)',marginBottom:'8px'}},'Verdict'),
+          React.createElement('p',{className:'serif',style:{fontSize:'18px',lineHeight:1.7,fontStyle:'italic'}},results.verdict)
+        ),
+        React.createElement('div',{className:'mono',style:{fontSize:'10px',color:'rgba(0,0,0,0.5)',marginTop:'12px',textAlign:'right'}},'✓ Both arguments auto-saved to history')
+      )
+    )
+  );
+}
+
+// ── MAIN APP ──
+function App(){
+  const [arg,setArg]=useState('');
+  const [loading,setLoading]=useState(false);
+  const [result,setResult]=useState(null);
+  const [apiKey,setApiKey]=useState('');
+  const [showKey,setShowKey]=useState(true);
+  const [pendingKey,setPendingKey]=useState(''); // FIX #10: separate pending key so cancel doesn't wipe saved key
+  const [error,setError]=useState('');
+  const resultRef=useRef(null);
+  const [activeTab,setActiveTab]=useState('scorer');
+  const [scorerSubTab,setScorerSubTab]=useState('score');
+  const [historyList,setHistoryList]=useState([]);
+  const [comparePrefill,setComparePrefill]=useState(null);
+  const canSubmit_rl=useRateLimiter(1000);
+
+  useEffect(()=>{
+    const s=sessionStorage.getItem('groq_key_aqsc');
+    if(s){setApiKey(s);setShowKey(false);}
+    try{
+      const h=localStorage.getItem('groq_arg_history');
+      if(h){const parsed=JSON.parse(h);setHistoryList(Array.isArray(parsed)?parsed:[]);}
+    }catch(e){
+      console.warn('History storage corrupted, resetting.',e);
+      localStorage.removeItem('groq_arg_history');
+    }
+  },[]);
+
+  const chars=arg.length;
+  const canSubmit=chars>=MIN_CHARS&&chars<=MAX_CHARS&&!loading&&apiKey;
+
+  // FIX #1: uses shared normaliseScoreResult and callGroq
+  const handleSubmit=async()=>{
+    if(!canSubmit)return;
+    if(!canSubmit_rl())return; // rate limit guard
+    setLoading(true);setResult(null);setError('');
+    try{
+      const raw=await callGroq(apiKey,[
+        {role:'user',content:'ARGUMENT TO EVALUATE:\n\n'+arg.trim()+'\n\nAnalyze ONLY this specific argument. Quote or reference actual phrases from it. Return ONLY the JSON object.'}
+      ],SYSTEM_PROMPT,2000);
+      const p=parseJSON(raw); // FIX #2: robust parser
+      const newResult=normaliseScoreResult(p,arg); // FIX #3: shared normalizer
+      // auto-save to history
+      setHistoryList(prev=>{
+        const updated=[newResult,...prev].slice(0,100);
+        try{localStorage.setItem('groq_arg_history',JSON.stringify(updated));}catch(e){console.warn('Could not save history',e);}
+        return updated;
+      });
+      setResult(newResult);
+      setTimeout(()=>resultRef.current?.scrollIntoView({behavior:'smooth'}),100);
+    }catch(e){setError(e.message);}
+    finally{setLoading(false);}
+  };
+
+  // FIX #10: safe key save/cancel (cancel doesn't wipe the saved key)
+  const openKeyModal=()=>{setPendingKey('');setShowKey(true);};
+  const saveKey=()=>{
+    if(pendingKey.trim()){
+      setApiKey(pendingKey.trim());
+      sessionStorage.setItem('groq_key_aqsc',pendingKey.trim());
+      setShowKey(false);
+    }
+  };
+  const cancelKey=()=>{setPendingKey('');setShowKey(false);}; // apiKey unchanged
+
+  const loadHistoryItem=(item)=>{
+    setResult(item);
+    setArg(item.argument);
+    setActiveTab('scorer');
+    setScorerSubTab('score');
+    setTimeout(()=>resultRef.current?.scrollIntoView({behavior:'smooth'}),100);
+  };
+
+  const handleCompareOriginalVsImproved=(original,improved)=>{
+    setComparePrefill({argA:original,argB:improved});
+    setScorerSubTab('compare');
+    setTimeout(()=>window.scrollTo({top:0,behavior:'smooth'}),100);
+  };
+
+  const saveToHistory=(scoreResult,source='from comparison')=>{
+    const newResult={...scoreResult,source};
+    setHistoryList(prev=>{
+      const updated=[newResult,...prev].slice(0,100);
+      try{localStorage.setItem('groq_arg_history',JSON.stringify(updated));}catch(e){console.warn('Could not save history',e);}
+      return updated;
+    });
+  };
+
+  const clearHistory=()=>{
+    if(window.confirm('Delete all evaluation history?')){
+      setHistoryList([]);
+      try{localStorage.removeItem('groq_arg_history');}catch(e){}
+    }
+  };
+
+  const tabStyle=(active)=>({
+    fontFamily:'IBM Plex Mono',fontSize:'11px',textTransform:'uppercase',letterSpacing:'0.25em',fontWeight:700,
+    padding:'12px 0',background:'none',border:'none',
+    borderBottom:active?'3px solid black':'3px solid transparent',
+    cursor:'pointer',color:active?'black':'rgba(0,0,0,0.45)'
+  });
+
+  const subTabStyle=(active)=>({
+    fontFamily:'IBM Plex Mono',fontSize:'10px',textTransform:'uppercase',letterSpacing:'0.2em',fontWeight:700,
+    padding:'8px 16px',border:'2px solid black',cursor:'pointer',
+    background:active?'black':'white',color:active?'white':'black'
+  });
+
+  return React.createElement('div',{style:{minHeight:'100vh',display:'flex',flexDirection:'column'}},
+
+    // FIX #10: API KEY MODAL — cancel-safe
+    showKey&&React.createElement('div',{
+      role:'dialog','aria-label':'Enter Groq API Key',
+      style:{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:50,padding:'16px'}
+    },
+      React.createElement('div',{style:{background:'white',border:'2px solid black',boxShadow:'6px 6px 0 #0a0a0a',padding:'32px',maxWidth:'480px',width:'100%'}},
+        React.createElement('h2',{className:'serif',style:{fontSize:'28px',fontWeight:700,marginBottom:'12px'}},'Groq API Key'),
+        React.createElement('p',{style:{fontSize:'14px',marginBottom:'8px',lineHeight:1.6}},
+          'Free key available at ',
+          React.createElement('a',{href:'https://console.groq.com/keys',target:'_blank',style:{textDecoration:'underline',fontWeight:600}},'console.groq.com/keys'),
+          ' — no credit card required.'
+        ),
+        React.createElement('p',{className:'mono',style:{fontSize:'11px',color:'rgba(0,0,0,0.55)',marginBottom:'16px',padding:'8px 10px',border:'1px solid rgba(0,0,0,0.2)',background:'hsl(60 14% 97%)'}},
+          '✓ Your API key is stored in sessionStorage only — it is automatically cleared when you close this tab or browser. Safe for shared devices.'
+        ),
+        React.createElement('input',{
+          type:'password',value:pendingKey,onChange:e=>setPendingKey(e.target.value),
+          placeholder:'gsk_...',onKeyDown:e=>e.key==='Enter'&&saveKey(),
+          style:{width:'100%',border:'2px solid black',padding:'12px',fontFamily:'IBM Plex Mono',fontSize:'14px',marginBottom:'16px',outline:'none'}
+        }),
+        React.createElement('div',{style:{display:'flex',gap:'12px'}},
+          React.createElement('button',{onClick:saveKey,disabled:!pendingKey.trim(),
+            style:{flex:1,fontFamily:'IBM Plex Mono',fontSize:'12px',textTransform:'uppercase',letterSpacing:'0.22em',fontWeight:700,border:'2px solid black',background:'black',color:'white',padding:'14px',cursor:'pointer'}},
+            'Save & Continue'),
+          apiKey&&React.createElement('button',{onClick:cancelKey,
+            style:{fontFamily:'IBM Plex Mono',fontSize:'12px',textTransform:'uppercase',letterSpacing:'0.2em',border:'2px solid black',background:'white',padding:'14px 18px',cursor:'pointer'}},
+            'Cancel')
+        )
+      )
+    ),
+
+    // HEADER
+    React.createElement('header',{style:{borderBottom:'2px solid black',padding:'clamp(24px,4vw,40px) clamp(20px,5vw,56px) 32px'}},
+      React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'24px'}},
+        React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'12px'}},
+          React.createElement('div',{style:{border:'2px solid black',background:'black',color:'white',width:'36px',height:'36px',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'16px'}},'⚖'),
+          React.createElement('span',{className:'mono',style:{fontSize:'11px',textTransform:'uppercase',letterSpacing:'0.28em',fontWeight:700}},'Volume I · Issue 01')
+        ),
+        !showKey&&React.createElement('button',{onClick:openKeyModal,
+          style:{fontFamily:'IBM Plex Mono',fontSize:'10px',textTransform:'uppercase',letterSpacing:'0.18em',textDecoration:'underline',color:'rgba(0,0,0,0.6)',background:'none',border:'none',cursor:'pointer'}},'Change API Key')
+      ),
+      React.createElement('h1',{className:'serif',style:{fontSize:'clamp(44px,8vw,88px)',fontWeight:700,letterSpacing:'-0.02em',lineHeight:0.9}},
+        'The Argument',React.createElement('br'),
+        React.createElement('span',{style:{fontStyle:'italic',fontWeight:400}},'Quality'),
+        ' Scorer.'
+      ),
+      React.createElement('p',{className:'serif',style:{fontStyle:'italic',fontSize:'clamp(16px,2.5vw,22px)',marginTop:'20px',color:'rgba(0,0,0,0.7)'}},
+        'A rigorous, unflattering evaluation of your reasoning — on logic, evidence, clarity, depth, and bias.'
+      )
+    ),
+
+    // MAIN TABS
+    React.createElement('div',{className:'tabs'},
+      React.createElement('button',{onClick:()=>setActiveTab('scorer'),style:tabStyle(activeTab==='scorer')},'§ Scorer'),
+      React.createElement('button',{onClick:()=>setActiveTab('history'),style:tabStyle(activeTab==='history')},'§ History ('+historyList.length+')')
+    ),
+
+    // CONTENT
+    React.createElement('main',{style:{flex:1,padding:'clamp(24px,4vw,40px) clamp(20px,5vw,56px)'}},
+
+      activeTab==='scorer'&&React.createElement(React.Fragment,null,
+        // Sub-tabs
+        React.createElement('div',{className:'sub-tabs'},
+          React.createElement('button',{onClick:()=>setScorerSubTab('score'),style:subTabStyle(scorerSubTab==='score')},'§ Score'),
+          React.createElement('button',{onClick:()=>setScorerSubTab('strengthen'),style:subTabStyle(scorerSubTab==='strengthen')},'✦ Strengthen'),
+          React.createElement('button',{onClick:()=>setScorerSubTab('compare'),style:subTabStyle(scorerSubTab==='compare')},'⚖ Compare')
+        ),
+
+        // SCORE SUB-TAB
+        scorerSubTab==='score'&&React.createElement(React.Fragment,null,
+          React.createElement('section',{style:{marginBottom:'40px'}},
+            React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'14px'}},
+              React.createElement('label',{className:'mono',style:{fontSize:'11px',textTransform:'uppercase',letterSpacing:'0.25em',fontWeight:700}},'§ Submit your argument'),
+              React.createElement('span',{className:'mono',style:{fontSize:'12px',color:chars>MAX_CHARS?'#DC2626':chars<MIN_CHARS?'rgba(0,0,0,0.5)':'black'}},chars+' / '+MAX_CHARS)
+            ),
+            React.createElement(ErrorBanner,{message:error,onDismiss:()=>setError('')}),
+            React.createElement('textarea',{value:arg,onChange:e=>setArg(e.target.value),placeholder:'Write or paste your argument here. The scorer evaluates your reasoning, not the truth of your claims.',rows:9,maxLength:MAX_CHARS,
+              style:{width:'100%',background:'white',border:'2px solid black',boxShadow:'4px 4px 0 #0a0a0a',padding:'clamp(16px,3vw,32px)',fontFamily:'IBM Plex Sans',fontSize:'16px',fontWeight:500,color:'black',outline:'none',resize:'vertical'}}),
+            React.createElement('div',{style:{marginTop:'18px',display:'flex',flexWrap:'wrap',alignItems:'center',gap:'8px'}},
+              React.createElement('span',{className:'mono',style:{fontSize:'10px',textTransform:'uppercase',letterSpacing:'0.22em',color:'rgba(0,0,0,0.6)',marginRight:'4px'}},'Try:'),
+              EXAMPLES.map((ex,i)=>React.createElement('button',{key:i,onClick:()=>setArg(ex.text),
+                style:{fontFamily:'IBM Plex Mono',fontSize:'11px',textTransform:'uppercase',letterSpacing:'0.15em',fontWeight:600,border:'2px solid black',background:'white',padding:'5px 10px',cursor:'pointer'}},ex.label))
+            ),
+            React.createElement('div',{style:{marginTop:'24px',display:'flex',flexWrap:'wrap',alignItems:'center',gap:'14px'}},
+              React.createElement('button',{onClick:handleSubmit,disabled:!canSubmit,
+                style:{fontFamily:'IBM Plex Mono',fontSize:'12px',textTransform:'uppercase',letterSpacing:'0.22em',fontWeight:700,border:'2px solid black',background:'black',color:'white',padding:'14px 28px',cursor:canSubmit?'pointer':'not-allowed',boxShadow:'4px 4px 0 #0a0a0a'}},
+                loading?'⟳ Evaluating…':'→ Score my argument'),
+              arg&&!loading&&React.createElement('button',{onClick:()=>{setArg('');setResult(null);},
+                style:{fontFamily:'IBM Plex Mono',fontSize:'11px',textTransform:'uppercase',letterSpacing:'0.2em',fontWeight:600,textDecoration:'underline',background:'none',border:'none',cursor:'pointer'}},'Clear'),
+              React.createElement('span',{className:'mono',style:{marginLeft:'auto',fontSize:'10px',textTransform:'uppercase',letterSpacing:'0.2em',color:'rgba(0,0,0,0.5)'}},'Powered by Groq · Llama 3.3 70B')
+            )
+          ),
+
+          React.createElement('div',{ref:resultRef},
+            loading&&React.createElement('div',{style:{border:'2px solid black',background:'white',boxShadow:'4px 4px 0 #0a0a0a',padding:'32px',display:'flex',alignItems:'center',gap:'16px'}},
+              React.createElement('span',{className:'spin',style:{fontSize:'24px'}},'⟳'),
+              React.createElement('div',{},
+                React.createElement('div',{className:'mono',style:{fontSize:'11px',textTransform:'uppercase',letterSpacing:'0.25em',fontWeight:700}},'Analyzing reasoning…'),
+                React.createElement('div',{className:'serif',style:{fontStyle:'italic',color:'rgba(0,0,0,0.7)',marginTop:'4px'}},'The scorer does not mince words. One moment.')
+              )
+            ),
+            !loading&&result&&React.createElement(React.Fragment,null,
+              React.createElement(ScoreCard,{result,apiKey}),
+              React.createElement(ArgumentStrengthener,{argument:result.argument,result,apiKey,onCompare:handleCompareOriginalVsImproved}),
+              React.createElement(DebateChat,{argument:result.argument,result,apiKey})
+            ),
+            !loading&&!result&&React.createElement('div',{style:{border:'2px dashed black',padding:'40px',textAlign:'center'}},
+              React.createElement('div',{className:'mono',style:{fontSize:'11px',textTransform:'uppercase',letterSpacing:'0.25em',fontWeight:700,marginBottom:'10px'}},'Awaiting submission'),
+              React.createElement('p',{className:'serif',style:{fontStyle:'italic',fontSize:'18px',color:'rgba(0,0,0,0.6)',maxWidth:'460px',margin:'0 auto'}},
+                'Paste an argument above. The report card appears here — blunt, itemized, and without compliments.')
+            )
+          )
+        ),
+
+        // FIX #8: STRENGTHEN SUB-TAB — works standalone now
+        scorerSubTab==='strengthen'&&React.createElement(ArgumentStrengthener,{
+          argument:result?result.argument:null,
+          result:result||null,
+          apiKey,
+          onCompare:handleCompareOriginalVsImproved
+        }),
+
+        // COMPARE SUB-TAB
+        scorerSubTab==='compare'&&React.createElement(CompareMode,{apiKey,prefill:comparePrefill,onClearPrefill:()=>setComparePrefill(null),saveToHistory})
+      ),
+
+      // HISTORY TAB
+      activeTab==='history'&&React.createElement(React.Fragment,null,
+        React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'24px'}},
+          React.createElement('span',{className:'mono',style:{fontSize:'11px',textTransform:'uppercase',letterSpacing:'0.25em',fontWeight:700}},'Past Evaluations'),
+          historyList.length>0&&React.createElement('button',{onClick:clearHistory,
+            style:{fontFamily:'IBM Plex Mono',fontSize:'10px',textTransform:'uppercase',letterSpacing:'0.2em',border:'2px solid black',padding:'6px 12px',cursor:'pointer',background:'white'}},'Clear All')
+        ),
+        React.createElement('div',{className:'history-scroll',style:{maxHeight:'70vh',overflowY:'auto',paddingRight:'8px'}},
+          historyList.length===0
+            ? React.createElement('div',{style:{border:'2px dashed black',padding:'40px',textAlign:'center'}},
+                React.createElement('p',{className:'serif',style:{fontStyle:'italic',fontSize:'18px',color:'rgba(0,0,0,0.55)'}},
+                  'No evaluations yet. Score an argument to begin building your record.')
+              )
+            : historyList.map(item=>React.createElement(HistoryItem,{key:item.id,item,onClick:()=>loadHistoryItem(item)}))
+        )
+      )
+    ),
+
+    // FOOTER
+    React.createElement('footer',{style:{borderTop:'2px solid black',padding:'24px clamp(20px,5vw,56px)'}},
+      React.createElement('div',{style:{display:'flex',justifyContent:'space-between',flexWrap:'wrap',gap:'16px',alignItems:'flex-start'}},
+        React.createElement('div',{},
+          React.createElement('div',{className:'mono',style:{fontSize:'10px',textTransform:'uppercase',letterSpacing:'0.25em',color:'rgba(0,0,0,0.6)',marginBottom:'6px'}},'© Argument Quality Scorer'),
+          React.createElement('div',{className:'mono',style:{fontSize:'10px',textTransform:'uppercase',letterSpacing:'0.25em',color:'rgba(0,0,0,0.4)'}},'Logic · Evidence · Clarity · Depth · Bias')
+        ),
+        React.createElement('div',{style:{border:'2px solid black',padding:'10px 16px',background:'white',maxWidth:'520px'}},
+          React.createElement('div',{className:'mono',style:{fontSize:'9px',textTransform:'uppercase',letterSpacing:'0.2em',fontWeight:700,marginBottom:'4px'}},'Architectural Note'),
+          React.createElement('p',{className:'mono',style:{fontSize:'10px',lineHeight:1.6,color:'rgba(0,0,0,0.7)'}},
+            'Groq + Llama 3.3 70B for inference speed. No backend, no data collection, all processing client-side. Overall score now includes bias as a weighted dimension.'
+          )
+        )
+      )
+    )
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('app')).render(React.createElement(App));
+</script>
+</body>
+</html>
