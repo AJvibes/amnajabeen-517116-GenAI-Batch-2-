@@ -6,10 +6,12 @@
 <title>ArgusScorer — Argument Quality Scorer</title>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,700;1,400&family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<!-- FONT UPDATED: IBM Plex Sans replaced with Poppins for better visibility -->
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,700;1,400&family=IBM+Plex+Mono:wght@400;600;700&family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'IBM Plex Sans',sans-serif;background:hsl(60 14% 95%);color:hsl(0 0% 4%);min-height:100vh}
+/* UPDATED FONT FAMILY HERE */
+body{font-family:'Poppins',sans-serif;background:hsl(60 14% 95%);color:hsl(0 0% 4%);min-height:100vh}
 .serif{font-family:'Cormorant Garamond',serif}
 .mono{font-family:'IBM Plex Mono',monospace}
 @keyframes snap-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
@@ -355,7 +357,8 @@ function DebateChat({argument,result,apiKey}){
     messages.length>0&&React.createElement('div',{className:'chat-scroll',style:{padding:'20px',display:'flex',flexDirection:'column',gap:'16px'}},
       messages.map((m,i)=>React.createElement('div',{key:i,style:{display:'flex',flexDirection:'column',alignItems:m.role==='user'?'flex-end':'flex-start'}},
         React.createElement('div',{className:'mono',style:{fontSize:'9px',textTransform:'uppercase',letterSpacing:'0.2em',color:'rgba(0,0,0,0.4)',marginBottom:'4px'}},m.role==='user'?'You':'ArgusScorer'),
-        React.createElement('div',{style:{maxWidth:'85%',border:'2px solid black',padding:'12px 16px',background:m.role==='user'?'black':'white',color:m.role==='user'?'white':'black',fontSize:'14px',lineHeight:1.65,fontFamily:'IBM Plex Sans'}},m.content)
+        // UPDATED FONT HERE
+        React.createElement('div',{style:{maxWidth:'85%',border:'2px solid black',padding:'12px 16px',background:m.role==='user'?'black':'white',color:m.role==='user'?'white':'black',fontSize:'14px',lineHeight:1.65,fontFamily:'Poppins'}},m.content)
       )),
       loading&&React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'8px'}},
         React.createElement('span',{className:'spin',style:{fontSize:'16px'}},'⟳'),
@@ -367,8 +370,9 @@ function DebateChat({argument,result,apiKey}){
       React.createElement(ErrorBanner,{message:error,onDismiss:()=>setError('')})
     ),
     React.createElement('div',{style:{borderTop:'2px solid black',padding:'16px',display:'flex',gap:'10px'}},
+      // UPDATED FONT HERE
       React.createElement('textarea',{value:input,onChange:e=>setInput(e.target.value),onKeyDown:handleKey,placeholder:'Press Enter to send · Shift+Enter for newline',rows:2,
-        style:{flex:1,border:'2px solid black',padding:'10px',fontFamily:'IBM Plex Sans',fontSize:'14px',resize:'none',outline:'none',background:'hsl(60 14% 97%)'}}),
+        style:{flex:1,border:'2px solid black',padding:'10px',fontFamily:'Poppins',fontSize:'14px',resize:'none',outline:'none',background:'hsl(60 14% 97%)'}}),
       React.createElement('button',{onClick:sendMessage,disabled:!input.trim()||loading,
         style:{fontFamily:'IBM Plex Mono',fontSize:'11px',textTransform:'uppercase',letterSpacing:'0.15em',fontWeight:700,border:'2px solid black',background:'black',color:'white',padding:'10px 18px',cursor:'pointer',flexShrink:0,alignSelf:'flex-end'}},
         loading?'…':'Send')
@@ -440,9 +444,10 @@ function ArgumentStrengthener({argument,result,apiKey,onCompare}){
     // FIX #8: standalone text input when no prior score
     isStandalone&&React.createElement('div',{style:{padding:'20px',borderBottom:'2px solid black'}},
       React.createElement('div',{className:'mono',style:{fontSize:'10px',textTransform:'uppercase',letterSpacing:'0.22em',fontWeight:700,marginBottom:'8px'}},'Paste your argument'),
+      // UPDATED FONT HERE
       React.createElement('textarea',{value:standaloneArg,onChange:e=>setStandaloneArg(e.target.value),
         placeholder:'You can strengthen any argument directly here without scoring first…',rows:6,
-        style:{width:'100%',border:'2px solid black',padding:'14px',fontFamily:'IBM Plex Sans',fontSize:'15px',outline:'none',resize:'vertical',background:'hsl(60 14% 97%)'}})
+        style:{width:'100%',border:'2px solid black',padding:'14px',fontFamily:'Poppins',fontSize:'15px',outline:'none',resize:'vertical',background:'hsl(60 14% 97%)'}})
     ),
 
     error&&React.createElement('div',{style:{padding:'16px'}},React.createElement(ErrorBanner,{message:error,onDismiss:()=>setError('')})),
@@ -455,13 +460,15 @@ function ArgumentStrengthener({argument,result,apiKey,onCompare}){
       React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(280px,1fr))',gap:'20px',marginBottom:'24px'}},
         React.createElement('div',{style:{border:'2px solid black',padding:'20px',background:'hsl(60 14% 97%)'}},
           React.createElement('div',{className:'mono',style:{fontSize:'10px',textTransform:'uppercase',letterSpacing:'0.22em',fontWeight:700,marginBottom:'12px',color:'rgba(0,0,0,0.5)'}},'Original'),
-          React.createElement('p',{style:{fontSize:'16px',lineHeight:1.75,fontWeight:500,fontFamily:'IBM Plex Sans'}},activeArg)
+          // UPDATED FONT HERE
+          React.createElement('p',{style:{fontSize:'16px',lineHeight:1.75,fontWeight:500,fontFamily:'Poppins'}},activeArg)
         ),
         React.createElement('div',{style:{border:'2px solid black',padding:'20px',background:'white',position:'relative'}},
           React.createElement('div',{style:{position:'absolute',top:'-2px',left:'-2px',background:'black',color:'white',padding:'3px 10px'}},
             React.createElement('span',{className:'mono',style:{fontSize:'9px',textTransform:'uppercase',letterSpacing:'0.2em',fontWeight:700}},'Strengthened ✦')
           ),
-          React.createElement('p',{style:{fontSize:'16px',lineHeight:1.75,marginTop:'8px',fontWeight:500,fontFamily:'IBM Plex Sans'}},strengthenResult.improved_argument)
+          // UPDATED FONT HERE
+          React.createElement('p',{style:{fontSize:'16px',lineHeight:1.75,marginTop:'8px',fontWeight:500,fontFamily:'Poppins'}},strengthenResult.improved_argument)
         )
       ),
       React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(240px,1fr))',gap:'16px',marginBottom:'20px'}},
@@ -554,14 +561,15 @@ function ScoreCard({result,apiKey}){
       ),
       React.createElement('div',{style:{marginBottom:'40px'}},
         React.createElement('h3',{className:'serif',style:{fontSize:'26px',fontWeight:700,borderBottom:'3px solid black',paddingBottom:'4px',display:'inline-block',marginBottom:'12px'}},'Explanation'),
-        React.createElement('p',{style:{fontSize:'15px',lineHeight:1.75,color:'rgba(0,0,0,0.88)'}},result.explanation)
+        // UPDATED FONT HERE (explanation text)
+        React.createElement('p',{style:{fontSize:'15px',lineHeight:1.75,color:'rgba(0,0,0,0.88)',fontFamily:'Poppins'}},result.explanation)
       ),
       React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(260px,1fr))',gap:'20px'}},
         React.createElement('div',{style:{border:'2px solid black',background:'hsl(60 14% 97%)',padding:'20px'}},
           React.createElement('h3',{className:'serif',style:{fontSize:'22px',fontWeight:700,borderBottom:'3px solid #DC2626',paddingBottom:'4px',color:'#DC2626',display:'inline-block',marginBottom:'16px'}},'Weaknesses'),
           result.weaknesses&&result.weaknesses.length>0
             ? React.createElement('ul',{style:{listStyle:'none',display:'flex',flexDirection:'column',gap:'14px'}},
-                result.weaknesses.map((w,i)=>React.createElement('li',{key:i,style:{display:'flex',gap:'12px',fontSize:'14px',lineHeight:1.65}},
+                result.weaknesses.map((w,i)=>React.createElement('li',{key:i,style:{display:'flex',gap:'12px',fontSize:'14px',lineHeight:1.65,fontFamily:'Poppins'}},
                   React.createElement('span',{className:'mono',style:{fontWeight:700,color:'#DC2626',flexShrink:0,paddingTop:'2px'}},String(i+1).padStart(2,'0')),
                   React.createElement('span',{},w)
                 ))
@@ -572,7 +580,7 @@ function ScoreCard({result,apiKey}){
           React.createElement('h3',{className:'serif',style:{fontSize:'22px',fontWeight:700,borderBottom:'3px solid black',paddingBottom:'4px',display:'inline-block',marginBottom:'16px'}},'Improvement Points'),
           result.improvement_points&&result.improvement_points.length>0
             ? React.createElement('ul',{style:{listStyle:'none',display:'flex',flexDirection:'column',gap:'14px'}},
-                result.improvement_points.map((w,i)=>React.createElement('li',{key:i,style:{display:'flex',gap:'12px',fontSize:'14px',lineHeight:1.65}},
+                result.improvement_points.map((w,i)=>React.createElement('li',{key:i,style:{display:'flex',gap:'12px',fontSize:'14px',lineHeight:1.65,fontFamily:'Poppins'}},
                   React.createElement('span',{className:'mono',style:{fontWeight:700,flexShrink:0,paddingTop:'2px'}},String(i+1).padStart(2,'0')),
                   React.createElement('span',{},w)
                 ))
@@ -598,7 +606,8 @@ function HistoryItem({item,onClick}){
   },
     React.createElement('div',{style:{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:'16px'}},
       React.createElement('div',{style:{flex:1}},
-        React.createElement('p',{className:'serif',style:{fontSize:'16px',fontStyle:'italic',color:'rgba(0,0,0,0.85)',lineHeight:1.4,marginBottom:'12px'}},
+        // UPDATED FONT HERE
+        React.createElement('p',{className:'serif',style:{fontSize:'16px',fontStyle:'italic',color:'rgba(0,0,0,0.85)',lineHeight:1.4,marginBottom:'12px',fontFamily:'Poppins'}},
           '"'+(item.argument.length>120?item.argument.slice(0,120)+'...':item.argument)+'"'
         ),
         React.createElement('div',{style:{display:'flex',alignItems:'center',gap:'10px',flexWrap:'wrap'}},
@@ -616,13 +625,14 @@ function HistoryItem({item,onClick}){
 }
 
 // ── COMPARE MODE ──
-// FIX #7: compare auto-saves both results
+// NEW FEATURE ADDED: Save Prompt UI
 function CompareMode({apiKey,prefill,onClearPrefill,saveToHistory}){
   const [argA,setArgA]=useState('');
   const [argB,setArgB]=useState('');
   const [loading,setLoading]=useState(false);
   const [results,setResults]=useState(null);
   const [error,setError]=useState('');
+  const [showSavePrompt,setShowSavePrompt]=useState(false); // ADDED STATE FOR PROMPT
   const canSend=useRateLimiter(2000);
 
   useEffect(()=>{
@@ -652,9 +662,8 @@ function CompareMode({apiKey,prefill,onClearPrefill,saveToHistory}){
       const verdict=await callGroq(apiKey,[{role:'user',content:verdictPrompt}],COMPARE_VERDICT_SYSTEM,200);
       const finalResults={a,b,verdict};
       setResults(finalResults);
-      // FIX #7: auto-save both to history
-      saveToHistory({...a},'compare · A');
-      saveToHistory({...b},'compare · B');
+      // CHANGED: Instead of auto-saving, show the prompt
+      setShowSavePrompt(true);
     }catch(e){setError(e.message);}
     finally{setLoading(false);}
   };
@@ -668,7 +677,8 @@ function CompareMode({apiKey,prefill,onClearPrefill,saveToHistory}){
       React.createElement('span',{className:'mono',style:{textTransform:'uppercase',letterSpacing:'0.15em',fontSize:'11px'}},[k]),
       React.createElement('span',{className:'mono',style:{fontWeight:700}},r[k])
     )),
-    React.createElement('div',{style:{marginTop:'12px',fontSize:'13px',lineHeight:1.6,color:'rgba(0,0,0,0.7)',fontStyle:'italic',fontFamily:'Cormorant Garamond'}},r.explanation)
+    // UPDATED FONT HERE
+    React.createElement('div',{style:{marginTop:'12px',fontSize:'13px',lineHeight:1.6,color:'rgba(0,0,0,0.7)',fontStyle:'italic',fontFamily:'Poppins'}},r.explanation)
   );
 
   return React.createElement('div',{style:{border:'2px solid black',background:'hsl(60 14% 97%)',boxShadow:'4px 4px 0 black'}},
@@ -683,12 +693,13 @@ function CompareMode({apiKey,prefill,onClearPrefill,saveToHistory}){
       React.createElement('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(260px,1fr))',gap:'16px',marginBottom:'20px'}},
         ['A','B'].map((label,idx)=>React.createElement('div',{key:label},
           React.createElement('div',{className:'mono',style:{fontSize:'10px',textTransform:'uppercase',letterSpacing:'0.22em',fontWeight:700,marginBottom:'8px'}},'Argument '+label),
+          // UPDATED FONT HERE
           React.createElement('textarea',{
             value:idx===0?argA:argB,
             onChange:e=>idx===0?setArgA(e.target.value):setArgB(e.target.value),
             placeholder:'Paste argument '+label+' here…',
             rows:6,
-            style:{width:'100%',border:'2px solid black',padding:'14px',fontFamily:'IBM Plex Sans',fontSize:'16px',fontWeight:500,outline:'none',resize:'vertical',background:'white'}
+            style:{width:'100%',border:'2px solid black',padding:'14px',fontFamily:'Poppins',fontSize:'16px',fontWeight:500,outline:'none',resize:'vertical',background:'white'}
           })
         ))
       ),
@@ -696,7 +707,7 @@ function CompareMode({apiKey,prefill,onClearPrefill,saveToHistory}){
         style:{fontFamily:'IBM Plex Mono',fontSize:'12px',textTransform:'uppercase',letterSpacing:'0.22em',fontWeight:700,border:'2px solid black',background:'black',color:'white',padding:'14px 28px',cursor:canCompare?'pointer':'not-allowed',boxShadow:'4px 4px 0 rgba(0,0,0,0.3)',marginBottom:'24px'}},
         loading?React.createElement(React.Fragment,null,React.createElement('span',{className:'spin'},'⟳'),' Scoring both arguments…'):'→ Compare Arguments'
       ),
-      // FIX #7: no save prompt — auto saved, just show note
+      // FEATURE: Save Prompt UI
       results&&React.createElement('div',{className:'snap-in'},
         React.createElement('div',{style:{display:'flex',flexWrap:'wrap',gap:'16px',marginBottom:'20px'}},
           React.createElement(MiniScoreCard,{r:results.a,label:'Argument A'}),
@@ -706,7 +717,18 @@ function CompareMode({apiKey,prefill,onClearPrefill,saveToHistory}){
           React.createElement('div',{className:'mono',style:{fontSize:'10px',textTransform:'uppercase',letterSpacing:'0.25em',color:'rgba(255,255,255,0.5)',marginBottom:'8px'}},'Verdict'),
           React.createElement('p',{className:'serif',style:{fontSize:'18px',lineHeight:1.7,fontStyle:'italic'}},results.verdict)
         ),
-        React.createElement('div',{className:'mono',style:{fontSize:'10px',color:'rgba(0,0,0,0.5)',marginTop:'12px',textAlign:'right'}},'✓ Both arguments auto-saved to history')
+        // ADDED: The 3 Button Prompt
+        showSavePrompt&&React.createElement('div',{style:{marginTop:'20px',border:'2px solid black',background:'white',padding:'20px'}},
+          React.createElement('div',{className:'mono',style:{fontSize:'10px',textTransform:'uppercase',letterSpacing:'0.25em',fontWeight:700,marginBottom:'12px'}},'Save to History?'),
+          React.createElement('div',{style:{display:'flex',gap:'12px',flexWrap:'wrap'}},
+            React.createElement('button',{onClick:()=>{saveToHistory(results.a,'compare · A');setShowSavePrompt(false);},
+              style:{fontFamily:'IBM Plex Mono',fontSize:'11px',textTransform:'uppercase',letterSpacing:'0.2em',fontWeight:700,border:'2px solid black',background:'white',padding:'10px 18px',cursor:'pointer',flex:1,minWidth:'140px'}},'Save Argument A'),
+            React.createElement('button',{onClick:()=>{saveToHistory(results.b,'compare · B');setShowSavePrompt(false);},
+              style:{fontFamily:'IBM Plex Mono',fontSize:'11px',textTransform:'uppercase',letterSpacing:'0.2em',fontWeight:700,border:'2px solid black',background:'white',padding:'10px 18px',cursor:'pointer',flex:1,minWidth:'140px'}},'Save Argument B'),
+            React.createElement('button',{onClick:()=>setShowSavePrompt(false),
+              style:{fontFamily:'IBM Plex Mono',fontSize:'11px',textTransform:'uppercase',letterSpacing:'0.2em',fontWeight:600,textDecoration:'underline',background:'none',border:'none',cursor:'pointer',color:'rgba(0,0,0,0.6)'}},'Skip')
+          )
+        )
       )
     )
   );
@@ -868,7 +890,8 @@ function App(){
         React.createElement('span',{style:{fontStyle:'italic',fontWeight:400}},'Quality'),
         ' Scorer.'
       ),
-      React.createElement('p',{className:'serif',style:{fontStyle:'italic',fontSize:'clamp(16px,2.5vw,22px)',marginTop:'20px',color:'rgba(0,0,0,0.7)'}},
+      // UPDATED FONT HERE
+      React.createElement('p',{className:'serif',style:{fontStyle:'italic',fontSize:'clamp(16px,2.5vw,22px)',marginTop:'20px',color:'rgba(0,0,0,0.7)',fontFamily:'Poppins'}},
         'A rigorous, unflattering evaluation of your reasoning — on logic, evidence, clarity, depth, and bias.'
       )
     ),
@@ -898,8 +921,9 @@ function App(){
               React.createElement('span',{className:'mono',style:{fontSize:'12px',color:chars>MAX_CHARS?'#DC2626':chars<MIN_CHARS?'rgba(0,0,0,0.5)':'black'}},chars+' / '+MAX_CHARS)
             ),
             React.createElement(ErrorBanner,{message:error,onDismiss:()=>setError('')}),
+            // UPDATED FONT HERE
             React.createElement('textarea',{value:arg,onChange:e=>setArg(e.target.value),placeholder:'Write or paste your argument here. The scorer evaluates your reasoning, not the truth of your claims.',rows:9,maxLength:MAX_CHARS,
-              style:{width:'100%',background:'white',border:'2px solid black',boxShadow:'4px 4px 0 #0a0a0a',padding:'clamp(16px,3vw,32px)',fontFamily:'IBM Plex Sans',fontSize:'16px',fontWeight:500,color:'black',outline:'none',resize:'vertical'}}),
+              style:{width:'100%',background:'white',border:'2px solid black',boxShadow:'4px 4px 0 #0a0a0a',padding:'clamp(16px,3vw,32px)',fontFamily:'Poppins',fontSize:'16px',fontWeight:500,color:'black',outline:'none',resize:'vertical'}}),
             React.createElement('div',{style:{marginTop:'18px',display:'flex',flexWrap:'wrap',alignItems:'center',gap:'8px'}},
               React.createElement('span',{className:'mono',style:{fontSize:'10px',textTransform:'uppercase',letterSpacing:'0.22em',color:'rgba(0,0,0,0.6)',marginRight:'4px'}},'Try:'),
               EXAMPLES.map((ex,i)=>React.createElement('button',{key:i,onClick:()=>setArg(ex.text),
@@ -930,7 +954,8 @@ function App(){
             ),
             !loading&&!result&&React.createElement('div',{style:{border:'2px dashed black',padding:'40px',textAlign:'center'}},
               React.createElement('div',{className:'mono',style:{fontSize:'11px',textTransform:'uppercase',letterSpacing:'0.25em',fontWeight:700,marginBottom:'10px'}},'Awaiting submission'),
-              React.createElement('p',{className:'serif',style:{fontStyle:'italic',fontSize:'18px',color:'rgba(0,0,0,0.6)',maxWidth:'460px',margin:'0 auto'}},
+              // UPDATED FONT HERE
+              React.createElement('p',{className:'serif',style:{fontStyle:'italic',fontSize:'18px',color:'rgba(0,0,0,0.6)',maxWidth:'460px',margin:'0 auto',fontFamily:'Poppins'}},
                 'Paste an argument above. The report card appears here — blunt, itemized, and without compliments.')
             )
           )
@@ -958,7 +983,8 @@ function App(){
         React.createElement('div',{className:'history-scroll',style:{maxHeight:'70vh',overflowY:'auto',paddingRight:'8px'}},
           historyList.length===0
             ? React.createElement('div',{style:{border:'2px dashed black',padding:'40px',textAlign:'center'}},
-                React.createElement('p',{className:'serif',style:{fontStyle:'italic',fontSize:'18px',color:'rgba(0,0,0,0.55)'}},
+                // UPDATED FONT HERE
+                React.createElement('p',{className:'serif',style:{fontStyle:'italic',fontSize:'18px',color:'rgba(0,0,0,0.55)',fontFamily:'Poppins'}},
                   'No evaluations yet. Score an argument to begin building your record.')
               )
             : historyList.map(item=>React.createElement(HistoryItem,{key:item.id,item,onClick:()=>loadHistoryItem(item)}))
@@ -975,7 +1001,8 @@ function App(){
         ),
         React.createElement('div',{style:{border:'2px solid black',padding:'10px 16px',background:'white',maxWidth:'520px'}},
           React.createElement('div',{className:'mono',style:{fontSize:'9px',textTransform:'uppercase',letterSpacing:'0.2em',fontWeight:700,marginBottom:'4px'}},'Architectural Note'),
-          React.createElement('p',{className:'mono',style:{fontSize:'10px',lineHeight:1.6,color:'rgba(0,0,0,0.7)'}},
+          // UPDATED FONT HERE
+          React.createElement('p',{className:'mono',style:{fontSize:'10px',lineHeight:1.6,color:'rgba(0,0,0,0.7)',fontFamily:'Poppins'}},
             'Groq + Llama 3.3 70B for inference speed. No backend, no data collection, all processing client-side. Overall score now includes bias as a weighted dimension.'
           )
         )
