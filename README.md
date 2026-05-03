@@ -8,16 +8,6 @@ ArgusScorer is a client-side web application that uses AI to analyze and score w
 
 ## 🖼️ Screenshots
 
-> **Add your screenshots here after running the app locally.**
-> Suggested screenshots:
-> - Main scoring interface (input + submit)
-> - Score report card with dimension bars
-> - Strengthen tab: original vs improved side-by-side
-> - Compare mode: two arguments scored head-to-head
-> - History tab: past evaluations list
-
-
-## Screenshots
 
 ![API](screenshots/api.png)
 ![Page 1](screenshots/page1.png)
