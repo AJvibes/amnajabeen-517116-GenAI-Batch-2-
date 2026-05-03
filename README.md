@@ -179,11 +179,11 @@ The AI has full context of your argument and scores. It will concede valid point
 
 ```bash
 # No installation needed. Just open the file:
-open scorer.html
+open index.html
 
 # Or serve locally if you prefer:
 python -m http.server 8000
-# Then visit http://localhost:8000/scorer.html
+# Then visit http://localhost:8000/index.html
 ```
 
 1. On first launch, enter your Groq API key when prompted
@@ -197,7 +197,7 @@ python -m http.server 8000
 ## 📁 Project Structure
 
 ```
-scorer.html     ← Entire application (single file)
+index.html     ← Entire application (single file)
 README.md       ← This file
 ```
 
