@@ -8,15 +8,13 @@ ArgusScorer is a client-side web application that uses AI to analyze and score w
 
 ## 🖼️ Screenshots
 
-
-![API](screenshots/api.png)
-![Page 1](screenshots/page1.png)
-![Page 2](screenshots/page2.png)
-![Page 3](screenshots/page3.png)
-![Scoring Arguments](screenshots/scoring-argu.png)
-![New Argument Debate](screenshots/new-argu-debate.png)
-![Compare](screenshots/compare.png)
-
+![API Setup - Add and save Groq API key](screenshots/api.png)
+![Page 1 - Argument Scorer interface overview](screenshots/page1.png)
+![Page 2 - Strengthen Argument visual workflow](screenshots/page2.png)
+![Page 3 - Argument Comparison page visuals](screenshots/page3.png)
+![Scoring Arguments - Input argument and view generated score result](screenshots/scoring-argu.png)
+![Strengthen & Multi-Turn Debate - AI rewrites weak argument into strong version, then shows how to improve 9/10 argument further using multi-turn debate](screenshots/new-argu-debate.png)
+![Comparison - Weak vs Strong AI-generated arguments with strength analysis](screenshots/compare.png)
 
 ---
 
