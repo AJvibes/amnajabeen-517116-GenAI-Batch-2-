@@ -16,11 +16,17 @@ ArgusScorer is a client-side web application that uses AI to analyze and score w
 > - Compare mode: two arguments scored head-to-head
 > - History tab: past evaluations list
 
-```
-[ Screenshot: Score Report Card ]
-[ Screenshot: Strengthen Tab ]
-[ Screenshot: Compare Mode ]
-```
+
+## Screenshots
+
+![API](screenshots/api.png)
+![Page 1](screenshots/page1.png)
+![Page 2](screenshots/page2.png)
+![Page 3](screenshots/page3.png)
+![Scoring Arguments](screenshots/scoring-argu.png)
+![New Argument Debate](screenshots/new-argu-debate.png)
+![Compare](screenshots/compare.png)
+
 
 ---
 
