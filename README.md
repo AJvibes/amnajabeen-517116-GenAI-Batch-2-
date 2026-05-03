@@ -1,8 +1,9 @@
+
 # ArgusScorer — Argument Quality Scorer
 
 > *A rigorous, unflattering evaluation of your reasoning — on logic, evidence, clarity, depth, and bias.*
 
-ArgusScorer is a client-side web application that uses AI to analyze and score written arguments across five critical dimensions. It helps students, debaters, researchers, and writers identify logical flaws, weak evidence, and bias in their reasoning — and then automatically rewrites their argument to a higher standard.
+ArgusScorer is a client-side web application that uses AI to analyze and score written arguments across five critical dimensions. It helps students, debaters, researchers and writers identify logical flaws, weak evidence, and bias in their reasoning — and then automatically rewrites their argument to a higher standard.
 
 ---
 
@@ -88,7 +89,7 @@ Groq was chosen for two reasons:
 - Zero setup for evaluators or users
 - No build pipeline to debug
 - No data leaves the user's machine except Groq API calls
-- Easy to submit, share, and run anywhere
+- Easy to submit, share and run anywhere
 
 ---
 
@@ -141,8 +142,7 @@ Groq was chosen for two reasons:
 1. Paste two arguments (yours vs. a peer's, two drafts, etc.)
 2. Both are scored simultaneously in parallel API calls
 3. A **judge verdict** is generated: which argument wins and why, in exactly 2 sentences
-4. Both arguments are automatically saved to history
-5. You can send either result to the Strengthen tab for improvement
+4. You can choose to save either argument to history or skip saving.
 
 ---
 
@@ -179,11 +179,11 @@ The AI has full context of your argument and scores. It will concede valid point
 
 ```bash
 # No installation needed. Just open the file:
-open ArgusScorer.html
+open scorer.html
 
 # Or serve locally if you prefer:
 python -m http.server 8000
-# Then visit http://localhost:8000/ArgusScorer.html
+# Then visit http://localhost:8000/scorer.html
 ```
 
 1. On first launch, enter your Groq API key when prompted
@@ -197,8 +197,8 @@ python -m http.server 8000
 ## 📁 Project Structure
 
 ```
-ArgusScorer.html     ← Entire application (single file)
-README.md                  ← This file
+scorer.html     ← Entire application (single file)
+README.md       ← This file
 ```
 
 The entire application — React components, API logic, prompts, styling — lives in one HTML file. This is intentional.
@@ -217,7 +217,7 @@ Sweeping generalizations              → bias = "High"
 Short or underdeveloped argument      → depth MUST be ≤ 4
 ```
 
-Every weakness must quote or paraphrase a specific phrase from your argument and name the exact logical flaw type (e.g., *hasty generalization*, *circular reasoning*, *appeal to popularity*).
+Every weakness must quote or paraphrase a specific phrase from the argument and name the exact logical flaw type (e.g., *hasty generalization*, *circular reasoning*, *appeal to popularity*).
 
 ---
 
@@ -227,13 +227,13 @@ Every weakness must quote or paraphrase a specific phrase from your argument and
 - **Groq rate limits** — free tier has request limits; heavy use may hit them.
 - **No export** — debate chat history is session-only; it does not persist across page reloads.
 - **Single file = no modularity** — intentional for submission/portability, but harder to scale.
-- **Model hallucination** — the AI may cite plausible-sounding but non-existent studies in the Strengthen output. Always verify.
+- **Model hallucination** — AI may cite plausible-sounding but non-existent studies in Strengthen output. Always verify.
 
 ---
 
 ## 📄 License
 
-This project was developed as an academic submission. All AI inference is performed via the Groq API using the Llama 3.3 70B model.
+This project was developed as an academic submission. All AI inference is performed via Groq API using the Llama 3.3 70B model.
 
 ---
 
@@ -241,3 +241,4 @@ This project was developed as an academic submission. All AI inference is perfor
 
 Developed as part of a coursework project.  
 Powered by [Groq](https://groq.com) · [Llama 3.3 70B](https://www.llama.com) · [React 18](https://react.dev)
+```
